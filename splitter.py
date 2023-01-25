@@ -67,6 +67,25 @@ class DatasetSplitter:
                     elif item.replace(".", "", 1).isdigit():
                         aux_list[index] = float(item)
                 parsed_section[key] = tuple(aux_list)
+            elif not findall(r"%\(.*?\)s+", value) and findall(r"\{.*?}+", value):
+                aux_dict = {}
+                aux_list = value.replace("{", "").replace("}", "").replace(" ", "").split(",")
+                for item in aux_list:
+                    pair_item = item.split(":")
+                    pair_key = pair_item[0]
+                    pair_value = pair_item[1]
+                    if pair_value == "None":
+                        pair_value = None
+                    elif pair_value in ["True", "Yes"]:
+                        pair_value = True
+                    elif pair_value in ["False", "No"]:
+                        pair_value = False
+                    elif pair_value.isdigit():
+                        pair_value = int(value)
+                    elif pair_value.replace(".", "", 1).isdigit():
+                        pair_value = float(value)
+                    aux_dict.update({pair_key: pair_value})
+                parsed_section[key] = aux_dict
         return parsed_section
 
     def set_attribute(self,
@@ -88,15 +107,19 @@ class DatasetSplitter:
         # Parse 'General Settings' and Set Attributes.
         general_settings = self.parse_config_section(cp, "General Settings")
         self.set_attribute("general_settings", general_settings)
-        # Parse 'Logging Settings' and Set Attributes.
-        logging_settings = self.parse_config_section(cp, "Logging Settings")
-        self.set_attribute("logging_settings", logging_settings)
+        # If Logging is Enabled...
+        if general_settings["enable_logging"]:
+            # Parse 'Logging Settings' and Set Attributes.
+            logging_settings = self.parse_config_section(cp, "Logging Settings")
+            self.set_attribute("logging_settings", logging_settings)
         # Parse 'Dataset Partitions Settings' and Set Attributes.
         dataset_partitions_settings = self.parse_config_section(cp, "Dataset Partitions Settings")
         self.set_attribute("dataset_partitions_settings", dataset_partitions_settings)
-        # Parse 'CIFAR-10 Dataset Settings' and Set Attributes.
-        cifar10_dataset_settings = self.parse_config_section(cp, "CIFAR-10 Dataset Settings")
-        self.set_attribute("cifar10_dataset_settings", cifar10_dataset_settings)
+        # If Input Dataset is CIFAR-10...
+        if general_settings["dataset_name"] == "CIFAR-10":
+            # Parse 'CIFAR-10 Dataset Settings' and Set Attributes.
+            cifar10_dataset_settings = self.parse_config_section(cp, "CIFAR-10 Dataset Settings")
+            self.set_attribute("cifar10_dataset_settings", cifar10_dataset_settings)
         # Unbind ConfigParser Object (Garbage Collector).
         del cp
 
@@ -381,6 +404,7 @@ class DatasetSplitter:
                                                  partition_labels_images_dict: dict,
                                                  y_phase: str) -> None:
         dataset_partitions_settings = self.get_attribute("dataset_partitions_settings")
+        shuffle_seed = dataset_partitions_settings["shuffle_seed"]
         output_root_folder = Path(dataset_partitions_settings["output_root_folder"])
         output_root_folder.mkdir(parents=True, exist_ok=True)
         partition_folder = Path(output_root_folder).joinpath("partition_" + str(partition_id))
@@ -393,13 +417,21 @@ class DatasetSplitter:
         y_phase_folder.mkdir(exist_ok=True)
         images_labels_file = y_phase_folder.joinpath("labels.txt")
         num_images = 0
+        image_label_list = []
+        for label in partition_labels_images_dict:
+            images = partition_labels_images_dict[label]
+            num_images += len(images)
+            for image in images:
+                image_label = image + ", " + label
+                image_label_list.append(image_label)
+        # Shuffle the Image-Label Pairs to Avoid Consecutive Images With the Same Label.
+        # Ordered Labels Usually Degrade the Learning Process of a Classification Model.
+        # (e.g., Validation Loss Tends to Increase Over Steps).
+        seed(shuffle_seed)
+        shuffle(image_label_list)
         with open(file=images_labels_file, mode="a") as y_phase_labels_file:
-            for label in partition_labels_images_dict:
-                images = partition_labels_images_dict[label]
-                num_images += len(images)
-                for image in images:
-                    image_label = image + ", " + label
-                    y_phase_labels_file.write(image_label + "\n")
+            for image_label in image_label_list:
+                y_phase_labels_file.write(image_label + "\n")
         if num_images == 0:
             message = "'{0}' Folder Filled With An Empty Labels Text File.".format(y_phase_folder)
         else:

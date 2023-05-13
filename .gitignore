@@ -127,3 +127,11 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Pycharm
+.idea
+
+# Default Input and Output Dataset Folders
+cifar10
+dataset_partitions
+

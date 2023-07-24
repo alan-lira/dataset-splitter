@@ -5,6 +5,7 @@ from logging import FileHandler, Formatter, getLevelName, Logger, StreamHandler
 from math import ceil
 from matplotlib import pyplot
 from numpy import arange, ndarray
+from os import environ, walk
 from pandas import DataFrame
 from pathlib import Path
 from PIL import Image
@@ -12,7 +13,6 @@ from random import seed, shuffle
 from re import findall
 from shutil import copy, rmtree
 from typing import Any, Optional
-from os import environ
 environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 from keras.datasets import cifar10
 
@@ -28,12 +28,8 @@ class DatasetSplitter:
         self.cifar10_dataset_settings = None
         # Other Attributes.
         self.logger = None
-        self.x_train_folder = None
-        self.y_train_folder = None
-        self.y_train_labels_file = None
-        self.x_test_folder = None
-        self.y_test_folder = None
-        self.y_test_labels_file = None
+        self.train_folder = None
+        self.test_folder = None
         self.number_of_classes = None
 
     @staticmethod
@@ -201,29 +197,14 @@ class DatasetSplitter:
         image.save(fp=output_file)
         del image
 
-    @staticmethod
-    def append_label_to_text_file(image_label: str,
-                                  output_file: Path) -> None:
-        file_parents_path = findall("(.*/)", str(output_file))
-        if file_parents_path:
-            Path(file_parents_path[0]).mkdir(parents=True, exist_ok=True)
-        with open(file=output_file, mode="a") as y_phase_labels_file:
-            y_phase_labels_file.write(image_label + "\n")
-
     def save_cifar_10_dataset(self,
                               x_train: ndarray,
                               y_train: ndarray,
                               x_test: ndarray,
                               y_test: ndarray) -> None:
-        # Get CIFAR-10 Dataset Settings.
-        cifar10_dataset_settings = self.get_attribute("cifar10_dataset_settings")
-        # Get CIFAR-10's Root Folder.
-        root_folder = Path(cifar10_dataset_settings["root_folder"])
-        # Set Training (x_train, y_train) and Testing (x_test, y_test) Folders Paths.
-        x_train_folder = root_folder.joinpath("x_train")
-        y_train_folder = root_folder.joinpath("y_train")
-        x_test_folder = root_folder.joinpath("x_test")
-        y_test_folder = root_folder.joinpath("y_test")
+        # Get Training and Testing Folders Paths.
+        train_folder = Path(self.get_attribute("train_folder"))
+        test_folder = Path(self.get_attribute("test_folder"))
         # Initialize the Shared Index for All Training and Testing Examples.
         example_index = 0
         # Save the Training Examples.
@@ -232,17 +213,14 @@ class DatasetSplitter:
         message = "Shape of x_train: {0} | Shape of y_train: {1}".format(x_train.shape, y_train.shape)
         self.log_message(message, "INFO")
         for train_index in range(0, len(x_train)):
-            # Set the X_Train Current Example File Name (Training Image File).
+            # Get the Label of Current Training Image.
+            train_image_label = int(y_train[train_index][0])
+            # Set the File Name of Current Training Image.
             image_file = str(example_index) + ".png"
-            # Save the X_Train Current Example (Training Image File).
-            x_train_image_nd_array = x_train[train_index]
-            x_train_image_output_file = x_train_folder.joinpath(image_file)
-            self.save_nd_array_to_image_file(x_train_image_nd_array, x_train_image_output_file)
-            # Save the Y_Train Current Example (Training Image Label).
-            y_train_image_label = int(y_train[train_index][0])
-            y_train_image_file_and_label = image_file + ", " + str(y_train_image_label)
-            y_train_labels_file = y_train_folder.joinpath("labels.txt")
-            self.append_label_to_text_file(y_train_image_file_and_label, y_train_labels_file)
+            # Save the Current Training Image File.
+            train_image_nd_array = x_train[train_index]
+            train_image_output_file = train_folder.joinpath(str(train_image_label)).joinpath(image_file)
+            self.save_nd_array_to_image_file(train_image_nd_array, train_image_output_file)
             example_index += 1
         # Save the Testing Examples.
         message = "Saving the CIFAR-10's {0} Testing Examples...".format(len(x_test))
@@ -250,17 +228,14 @@ class DatasetSplitter:
         message = "Shape of x_test: {0} | Shape of y_test: {1}".format(x_test.shape, y_test.shape)
         self.log_message(message, "INFO")
         for test_index in range(0, len(x_test)):
-            # Set the X_Test Current Example File Name (Testing Image File).
+            # Get the Label of Current Testing Image.
+            test_image_label = int(y_test[test_index][0])
+            # Set the File Name of Current Testing Image.
             image_file = str(example_index) + ".png"
-            # Save the X_Test Current Example (Testing Image File).
-            x_test_image_nd_array = x_test[test_index]
-            x_test_image_output_file = x_test_folder.joinpath(image_file)
-            self.save_nd_array_to_image_file(x_test_image_nd_array, x_test_image_output_file)
-            # Save the Y_Test Current Example (Testing Image Label).
-            y_test_image_label = int(y_test[test_index][0])
-            y_test_image_file_and_label = image_file + ", " + str(y_test_image_label)
-            y_test_labels_file = y_test_folder.joinpath("labels.txt")
-            self.append_label_to_text_file(y_test_image_file_and_label, y_test_labels_file)
+            # Save the Current Testing Image File.
+            test_image_nd_array = x_test[test_index]
+            test_image_output_file = test_folder.joinpath(str(test_image_label)).joinpath(image_file)
+            self.save_nd_array_to_image_file(test_image_nd_array, test_image_output_file)
             example_index += 1
 
     def fetch_and_save_input_dataset(self) -> None:
@@ -270,7 +245,7 @@ class DatasetSplitter:
             self.log_message(message, "INFO")
             if general_settings["dataset_name"] == "CIFAR-10":
                 root_folder = Path(self.get_attribute("cifar10_dataset_settings")["root_folder"])
-                content_to_delete = ["x_train", "y_train", "x_test", "y_test"]
+                content_to_delete = ["train", "test"]
                 self.wipe_folder_content(root_folder,
                                          content_to_delete)
                 x_train, y_train, x_test, y_test = self.fetch_cifar_10_dataset()
@@ -284,49 +259,41 @@ class DatasetSplitter:
         if general_settings["dataset_name"] == "CIFAR-10":
             cifar10_dataset_settings = self.get_attribute("cifar10_dataset_settings")
             root_folder = Path(cifar10_dataset_settings["root_folder"])
-            x_train_folder = root_folder.joinpath("x_train")
-            self.set_attribute("x_train_folder", x_train_folder)
-            y_train_folder = root_folder.joinpath("y_train")
-            self.set_attribute("y_train_folder", y_train_folder)
-            y_train_labels_file = y_train_folder.joinpath("labels.txt")
-            self.set_attribute("y_train_labels_file", y_train_labels_file)
-            x_test_folder = root_folder.joinpath("x_test")
-            self.set_attribute("x_test_folder", x_test_folder)
-            y_test_folder = root_folder.joinpath("y_test")
-            self.set_attribute("y_test_folder", y_test_folder)
-            y_test_labels_file = y_test_folder.joinpath("labels.txt")
-            self.set_attribute("y_test_labels_file", y_test_labels_file)
+            train_folder = root_folder.joinpath("train")
+            self.set_attribute("train_folder", train_folder)
+            test_folder = root_folder.joinpath("test")
+            self.set_attribute("test_folder", test_folder)
             number_of_classes = cifar10_dataset_settings["number_of_classes"]
             self.set_attribute("number_of_classes", number_of_classes)
 
     def generate_labels_images_dict(self,
                                     y_phase: str) -> dict:
         labels_images_dict = {}
-        y_phase_labels_file = None
         examples_fraction = None
+        root_phase_path = None
         if y_phase == "train":
-            y_phase_labels_file = self.get_attribute("y_train_labels_file")
+            root_phase_path = self.get_attribute("train_folder")
             examples_fraction = self.get_attribute("dataset_partitions_settings")["training_examples_fraction"]
         elif y_phase == "test":
-            y_phase_labels_file = self.get_attribute("y_test_labels_file")
+            root_phase_path = self.get_attribute("test_folder")
             examples_fraction = self.get_attribute("dataset_partitions_settings")["testing_examples_fraction"]
-        number_of_examples = sum(1 for _ in open(file=y_phase_labels_file, mode="r"))
-        lines_fraction = ceil(number_of_examples * examples_fraction)
+        number_of_examples = sum([len(files) for r, d, files in walk(root_phase_path)])
+        samples_to_generate = ceil(number_of_examples * examples_fraction)
         message = "Sampling {0} {1}ing Examples (Out of {2})..." \
-            .format(lines_fraction,
+            .format(samples_to_generate,
                     y_phase.capitalize(),
                     number_of_examples)
         self.log_message(message, "INFO")
-        with open(file=y_phase_labels_file, mode="r") as labels_file:
-            lines = [next(labels_file) for _ in range(lines_fraction)]
-            for line in lines:
-                split_line = line.rstrip().split(", ")
-                label = split_line[1]
-                image_file = split_line[0]
-                if label in labels_images_dict:
-                    labels_images_dict[label].append(image_file)
-                else:
-                    labels_images_dict[label] = [image_file]
+        while samples_to_generate > 0:
+            for dir_path, _, file_names in walk(root_phase_path):
+                for file_name in file_names:
+                    image_file = Path(*Path(Path(dir_path).joinpath(file_name)).parts[-2:])
+                    label = image_file.parent.name
+                    if label in labels_images_dict:
+                        labels_images_dict[label].append(image_file)
+                    else:
+                        labels_images_dict[label] = [image_file]
+                    samples_to_generate -= 1
         return labels_images_dict
 
     def partition_labels_images_dict(self,
@@ -378,14 +345,15 @@ class DatasetSplitter:
         x_phase_folder = None
         x_phase_source_folder = None
         if x_phase == "train":
-            x_phase_folder = partition_folder.joinpath("x_train")
-            x_phase_source_folder = Path(self.get_attribute("x_train_folder"))
+            x_phase_folder = partition_folder.joinpath("train")
+            x_phase_source_folder = Path(self.get_attribute("train_folder"))
         elif x_phase == "test":
-            x_phase_folder = partition_folder.joinpath("x_test")
-            x_phase_source_folder = Path(self.get_attribute("x_test_folder"))
+            x_phase_folder = partition_folder.joinpath("test")
+            x_phase_source_folder = Path(self.get_attribute("test_folder"))
         x_phase_folder.mkdir(exist_ok=True)
         num_images = 0
         for label in partition_labels_images_dict:
+            x_phase_folder.joinpath(label).mkdir(exist_ok=True)
             images = partition_labels_images_dict[label]
             num_images += len(images)
             for image in images:
@@ -397,45 +365,6 @@ class DatasetSplitter:
             message = "'{0}' Folder Filled With {1} Example (Image File).".format(x_phase_folder, num_images)
         else:
             message = "'{0}' Folder Filled With {1} Examples (Image Files).".format(x_phase_folder, num_images)
-        self.log_message(message, "INFO")
-
-    def generate_images_labels_file_to_partition(self,
-                                                 partition_id: int,
-                                                 partition_labels_images_dict: dict,
-                                                 y_phase: str) -> None:
-        dataset_partitions_settings = self.get_attribute("dataset_partitions_settings")
-        shuffle_seed = dataset_partitions_settings["shuffle_seed"]
-        output_root_folder = Path(dataset_partitions_settings["output_root_folder"])
-        output_root_folder.mkdir(parents=True, exist_ok=True)
-        partition_folder = Path(output_root_folder).joinpath("partition_" + str(partition_id))
-        partition_folder.mkdir(exist_ok=True)
-        y_phase_folder = None
-        if y_phase == "train":
-            y_phase_folder = partition_folder.joinpath("y_train")
-        elif y_phase == "test":
-            y_phase_folder = partition_folder.joinpath("y_test")
-        y_phase_folder.mkdir(exist_ok=True)
-        images_labels_file = y_phase_folder.joinpath("labels.txt")
-        num_images = 0
-        image_label_list = []
-        for label in partition_labels_images_dict:
-            images = partition_labels_images_dict[label]
-            num_images += len(images)
-            for image in images:
-                image_label = image + ", " + label
-                image_label_list.append(image_label)
-        # Shuffle the Image-Label Pairs to Avoid Consecutive Images With the Same Label.
-        # Ordered Labels Usually Degrade the Learning Process of a Classification Model.
-        # (e.g., Validation Loss Tends to Increase Over Steps).
-        seed(shuffle_seed)
-        shuffle(image_label_list)
-        with open(file=images_labels_file, mode="a") as y_phase_labels_file:
-            for image_label in image_label_list:
-                y_phase_labels_file.write(image_label + "\n")
-        if num_images == 0:
-            message = "'{0}' Folder Filled With An Empty Labels Text File.".format(y_phase_folder)
-        else:
-            message = "'{0}' Folder Filled With A Labels Text File.".format(y_phase_folder)
         self.log_message(message, "INFO")
 
     @staticmethod
@@ -541,10 +470,6 @@ class DatasetSplitter:
                 self.copy_images_files_to_partition(partition_id,
                                                     partition_labels_images_dict,
                                                     x_phase)
-                # Generate their Respective Images Labels Files (Y_Train).
-                self.generate_images_labels_file_to_partition(partition_id,
-                                                              partition_labels_images_dict,
-                                                              y_phase)
             if plot_data_distribution_graphs or save_data_distribution_graphs:
                 # Build the Graph of the N Training Partitions Generated.
                 self.build_partitions_classification_graph(y_phase,
@@ -568,10 +493,6 @@ class DatasetSplitter:
                 self.copy_images_files_to_partition(partition_id,
                                                     partition_labels_images_dict,
                                                     x_phase)
-                # Generate their Respective Images Labels Files (Y_Test).
-                self.generate_images_labels_file_to_partition(partition_id,
-                                                              partition_labels_images_dict,
-                                                              y_phase)
             if plot_data_distribution_graphs or save_data_distribution_graphs:
                 # Build the Graph of the N Testing Partitions Generated.
                 self.build_partitions_classification_graph(y_phase,
@@ -603,10 +524,10 @@ def main() -> None:
     # Instantiate and Set Logger.
     logger = ds.load_logger()
     ds.set_attribute("logger", logger)
+    # Set Training and Testing Input Folders and Files Paths.
+    ds.set_input_dataset_training_and_testing_paths()
     # Fetch and Save Input Dataset (If 'fetch_dataset_from_source' is True).
     ds.fetch_and_save_input_dataset()
-    # Set Training (x_train, y_train) and Testing (x_test, y_test) Input Folders and Files Paths.
-    ds.set_input_dataset_training_and_testing_paths()
     # Split the Input Dataset.
     ds.split_input_dataset()
     # Unbind Objects (Garbage Collector).
@@ -618,4 +539,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
